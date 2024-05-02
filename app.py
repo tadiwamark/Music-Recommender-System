@@ -1,54 +1,54 @@
+import streamlit as st
+import numpy as np
 import pandas as pd
+from typing import List, Dict
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import streamlit as st
 
-# Load the music dataset
-music_data = pd.read_csv('music_dataset.csv')
+# Load the data
+def load_data():
+    songs = pd.read_csv('songdata.csv')
+    songs = songs.sample(n=5000).drop('link', axis=1).reset_index(drop=True)
+    songs['text'] = songs['text'].str.replace(r'\n', '')
+    return songs
 
-# Create a TF-IDF vectorizer
-vectorizer = TfidfVectorizer()
+# Compute the similarities
+def compute_similarities(songs):
+    tfidf = TfidfVectorizer(analyzer='word', stop_words='english')
+    lyrics_matrix = tfidf.fit_transform(songs['text'])
+    cosine_similarities = cosine_similarity(lyrics_matrix)
+    similarities = {}
+    for i in range(len(cosine_similarities)):
+        similar_indices = cosine_similarities[i].argsort()[:-50:-1]
+        similarities[songs['song'].iloc[i]] = [(cosine_similarities[i][x], songs['song'][x], songs['artist'][x]) for x in similar_indices][1:]
+    return similarities
 
-# Fit and transform the text features
-tfidf_matrix = vectorizer.fit_transform(music_data['features'])
+# The recommendation class
+class ContentBasedRecommender:
+    def __init__(self, matrix):
+        self.matrix_similar = matrix
 
-# Compute the cosine similarity matrix
-cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
+    def recommend(self, song, number_songs):
+        if song not in self.matrix_similar:
+            return []
+        return self.matrix_similar[song][:number_songs]
 
-# Function to get recommendations based on a given music title
-def get_recommendations(title, cosine_sim, music_data):
-    # Get the index of the music title
-    idx = music_data[music_data['title'] == title].index[0]
-
-    # Get the pairwise similarity scores
-    sim_scores = list(enumerate(cosine_sim[idx]))
-
-    # Sort the music titles based on similarity scores
-    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-
-    # Get the top 5 recommendations
-    top_recommendations = sim_scores[1:6]
-
-    # Get the recommended music titles
-    recommended_music = [music_data.iloc[i[0]]['title'] for i in top_recommendations]
-
-    return recommended_music
+# Load the data
+songs = load_data()
+# Compute the similarities
+similarities = compute_similarities(songs)
+# Create the recommender
+recommender = ContentBasedRecommender(similarities)
 
 # Streamlit app
-def main():
-    st.title("Music Recommender")
+st.title('Music Recommender System')
+song = st.selectbox('Select a song', songs['song'].unique())
+number_songs = st.slider('Number of recommendations', 1, 10, 4)
 
-    # Get user input
-    user_input = st.text_input("Enter a music title:")
-
-    if st.button("Get Recommendations"):
-        if user_input:
-            recommendations = get_recommendations(user_input, cosine_sim, music_data)
-            st.write("Recommended Music:")
-            for recommendation in recommendations:
-                st.write(recommendation)
-        else:
-            st.write("Please enter a music title.")
-
-if __name__ == '__main__':
-    main()
+if st.button('Recommend'):
+    results = recommender.recommend(song, number_songs)
+    if results:
+        for idx, (score, song, artist) in enumerate(results, 1):
+            st.write(f"Recommendation {idx}: {song} by {artist} with similarity score {score:.3f}")
+    else:
+        st.write("No recommendations found. Please select a different song.")
